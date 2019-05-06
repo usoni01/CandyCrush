@@ -1,0 +1,355 @@
+<!--
+CandyCrush
+Your Name: Urja Soni
+Collaborators:Did not collaborate with anyone for this project
+-->
+<!DOCTYPE html>
+<html>
+<!--
+/* Copyright (c) 2017 MIT 6.813/6.831 course staff, all rights reserved.
+ * Redistribution of original or derived work requires permission of course staff.
+ */
+-->
+
+<head>
+<meta charset="utf-8">
+<title>CandyCrush</title>
+
+<!-- Load style sheets -->
+<link rel="stylesheet" href=
+  "https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/css/bootstrap.css">
+
+
+<link rel="stylesheet" href="mainLayout.css">
+
+<!-- Use mobile-aware viewport -->
+<meta name="viewport" content=
+  "width=device-width, initial-scale=1, shrink-to-fit=no">
+
+<!-- Load any supplemental Javascript libraries here -->
+<script src=
+  "https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+<script src=
+  "https://cdnjs.cloudflare.com/ajax/libs/seedrandom/2.4.2/seedrandom.js">
+</script>
+</script>
+<script src="candy.js"></script>
+<script src="board.js"></script>
+<script src="rules.js"></script>
+
+<script>
+
+// By default, the first board loaded by your page will be the same 
+// each time you load (which is accomplished by "seeding" the random
+// number generator. This makes testing (and grading!) easier!
+Math.seedrandom(0);
+s
+
+// A short jQuery extension to read query parameters from the URL.
+$.extend({
+  getUrlVars: function() {
+    var vars = [], pair;
+    var pairs = window.location.search.substr(1).split('&');
+    for (var i = 0; i < pairs.length; i++) {
+      pair = pairs[i].split('=');
+      vars.push(pair[0]);
+      vars[pair[0]] = pair[1] &&
+          decodeURIComponent(pair[1].replace(/\+/g, ' '));
+    }
+    return vars;
+  },
+  getUrlVar: function(name) {
+    return $.getUrlVars()[name];
+  }
+});
+
+// constants
+var DEFAULT_BOARD_SIZE = 8;
+
+// data model at global scope for easier debugging
+var board;
+var rules;
+var boardElement;
+
+// initialize board
+if ($.getUrlVar('size') && $.getUrlVar('size') >= 3) {
+  board = new Board($.getUrlVar('size'));
+} else {
+  board = new Board(DEFAULT_BOARD_SIZE);
+}
+
+// load a rule
+rules = new Rules(board);
+
+// Final initialization entry point: the Javascript code inside this block
+// runs at the end of start-up when the page has finished loading.
+$(document).ready(function()
+{
+  // Your code here.
+  rules.prepareNewGame();
+  buildGameUI();
+});
+
+
+/* Event Handlers */
+// access the candy object with info.candy
+
+// add a candy to the board
+$(board).on('add', function(e, info)
+{
+  var targetRow     = $(boardElement).find('tr').eq(info.toRow);
+  var targetCol     = $(targetRow).find('td').eq(info.toCol);
+  var candyMarkup   = generateCandyMarkup(info.candy);
+  // a little timeout of 0.5 seconds to animate
+  setTimeout(function(){
+    $(targetCol).replaceWith(candyMarkup);
+  }, 500);
+
+  /*
+  * Handle the "Crush Once" button enable/disable for cases,
+    when some candies are automatically matched as result of new game or new candies are spawned.
+  */ 
+  var allPossibleMatches = rules.getCandyCrushes();
+  if( allPossibleMatches.length ){
+    $('#crushCandiesBtn').prop('disabled', false).addClass('btn-success text-white');
+  }else{
+    $('#crushCandiesBtn').prop('disabled', true).removeClass('btn-success text-white');
+  }
+});
+
+// move a candy on the board
+$(board).on('move', function(e, info)
+{
+  /*
+    When a candy is moved there are two steps to do.
+    1. Move candy to the its destination by getting the candy info from callback param.
+    2. Remove the target candy at UI level that was just moved (if its still there in our data structure) in order to avoid replication
+	{
+	 candy: {},
+	 fromRow: 
+	 fromCol:
+	 toRow:
+	 toCol:
+	}
+  */
+  var destinationRow          = $(boardElement).find('tr').eq(info.toRow);
+  var destinationCol          = $(destinationRow).find('td').eq(info.toCol);
+  var candyAtDestination      = board.getCandyAt( info.candy.row, info.candy.col );
+  var candyMarkup             = generateCandyMarkup(candyAtDestination);
+  $(destinationCol).replaceWith( candyMarkup ); // Boom!
+
+  // Candy has already been moved by clonning process, now lets remove the actual one
+  var targetRow               = $(boardElement).find('tr').eq(info.fromRow);
+  var targetCol               = $(targetRow).find('td').eq(info.fromCol);
+  var targetCandy             = board.getCandyAt( info.fromRow, info.toRow );
+  // Remove the candy from UI after moving to new position
+  if(!targetCandy){
+    $(targetCol).text('').css('backgroundColor', '#fff');
+  }
+});
+
+// remove a candy from the board
+$(board).on('remove', function(e, info)
+{
+  $('#' + info.candy.id).text('').css('backgroundColor','#fff');
+});
+
+// move a candy on the board
+$(board).on('scoreUpdate', function(e, info)
+{
+  // Your code here. To be implemented in pset 2.
+});
+
+// Button Events
+$(document).on('click', "#crushCandiesBtn", function(evt)
+{
+  var allPossibleMatches = rules.getCandyCrushes();
+  if( allPossibleMatches.length ){
+    rules.removeCrushes( allPossibleMatches );
+    rules.moveCandiesDown();
+  }
+});
+
+// keyboard events arrive here
+$(document).on('keydown', function(evt) {
+  // Your code here.
+
+  // New game when space bar (Key code 32) or 'n' key (Key code 78) is pressed
+  if(evt.keyCode === 32 || evt.keyCode === 78){
+    resetBoardAndStartNewGame();
+  }
+});
+
+function resetBoardAndStartNewGame(){
+  board.clear();
+  rules.prepareNewGame();
+  buildGameUI();
+}
+
+/*
+* Generate an HTML table dynamically according to the size of the board (resetting everything)
+*/
+function buildGameUI(){
+  // Grab the table body element and assign it to global variable for later use
+  boardElement        = document.querySelector('#mainColumn table tbody');
+
+  var tableContent    = '';
+  // Loop over the board to generate an actual board using DHTML.
+  for(var row of board.square){
+    
+    tableContent     += '<tr>';
+
+    for(var candy of row){
+      tableContent  += generateCandyMarkup(candy);
+    }
+
+    tableContent    +=  '</tr>';
+  }
+  // Finally append the HTML string to the table to render that into the view
+  $(boardElement).html(tableContent);
+  $('#lastColumn').show();
+}
+
+/*
+ * Markup helper function that takes a candy instance as a parameter and returns HTML required for a single candy
+*/
+function generateCandyMarkup(candy){
+  // Convert 0,1,2,3 to a,b,c,d using binary-to-text encoding scheme (36)
+  var data        = (candy.col + 10).toString(36) + (candy.row + 1);
+  // If the color is yellow, the text-color should be a color other than the default (white)
+  var colorProp   = candy.color == 'yellow' ? 'color:#555;' : '';
+  return `<td style="background-color:${candy.color};${colorProp}" id="${candy.id}">${data}</td>`;
+}
+
+/*
+  Get input value and move the board elements accordingly
+  This function move elements on data structure level only
+  The actual change occurs when `move` event is fired
+*/
+function moveCandy(direction){
+  var candyName = $('#inputCandyName').val();
+  if(!isCandyNameValid(candyName)){
+    return false;
+  }
+  candyName = candyName.toLowerCase();
+  var candy     = getCandyByName( candyName );
+  if(rules.isMoveTypeValid(candy, direction) == true ){
+    var targetCandy = board.getCandyInDirection(candy, direction);
+    board.flipCandies(candy, targetCandy);
+    $('#inputCandyName').val('').focus();
+    // Disable all buttons
+    disableDirectionalButtons();
+    $('#crushCandiesBtn').prop('disabled', false).addClass('btn-success text-white');
+  }else{
+    console.log('Invalid Move');
+  } 
+}
+
+/*
+*  Takes candy name as a string parameter, where first character is the alphabet representing column
+*  and second character is a number representing the row.
+*  Converts first character to ascci to get the column index.
+*/
+function getCandyByName(candyName){
+  var candyCol  = candyName.charCodeAt(0) - 97;
+  var candyRow  = Number(candyName.charAt(1)) - 1;
+  return board.getCandyAt(candyRow, candyCol);
+}
+
+ /**
+ * On user input, check if input is valid, enable/disable the movement buttons accordingly
+ */
+
+function decidePossibleActions(){
+  var candyName = $('#inputCandyName').val();
+  disableDirectionalButtons();
+  if(!isCandyNameValid(candyName)){
+    return false;
+  }
+  candyName           = candyName.toLowerCase();
+  var candy           = getCandyByName( candyName );
+  // if its an invalid input like Z9, clear the input and return false.
+  if(!candy){
+    $('#inputCandyName').val('');
+    return false;
+  }
+  var directions      = ['up','down','left','right'];
+  // Loop over all possible directions to find out which ones are valid for the current input
+  for(var dir of directions){
+    $('#' + dir + 'ArrowBtn').prop('disabled', rules.isMoveTypeValid(candy, dir) === false );
+    if(rules.isMoveTypeValid(candy, dir) == true){
+      $('#' + dir + 'ArrowBtn').addClass('btn-success text-white');
+    }else{
+      $('#' + dir + 'ArrowBtn').removeClass('btn-success text-white');
+    }
+  }
+}
+
+
+
+/*
+  UI helper function to disable all buttons
+*/
+function disableDirectionalButtons(){
+  var buttonIds = ['upArrowBtn','downArrowBtn','leftArrowBtn','rightArrowBtn'];
+  for(var buttonId of buttonIds){
+    $('#' + buttonId).prop('disabled', true).removeClass('btn-success text-white');
+  }
+}
+
+/*
+* Validation helper function to check validity of user input
+*/
+function isCandyNameValid(candyName){
+  return candyName && candyName.length == 2;
+}
+
+</script>
+
+
+</head>
+
+<body>
+
+<div class="container pt-5">
+  <div class="row d-flex flex-column flex-sm-row align-items-center justify-content-between">
+    
+    <div id="firstColumn" class="mb-5">
+      <div class="text-center">
+      <!-- Column 1 Code Here -->
+        <h2 class="game-title">Candy Crush</h2>
+        <input type="button" class="btn btn-default" onclick="resetBoardAndStartNewGame()" value="New Game">
+      </div>
+    </div>
+
+    <div id="mainColumn">
+      <table class="table table-bordered">
+        <tbody></tbody>
+      </table>
+      <!-- Column 2 Code Here -->
+
+    </div>
+
+    <div class="text-center" id="lastColumn">
+
+      <!-- Column 3 Code Here -->
+      <h3>Move: <input type="text" style="width:50px" id="inputCandyName" maxlength="2" onkeyup="decidePossibleActions()" /> </h3>
+      <div class="d-flex justify-content-center">
+        <button class="btn btn-default arrow-button" id="upArrowBtn" onclick="moveCandy('up')">&uarr;</button>
+      </div>
+      <div class="d-flex justify-content-between">
+        <button class="btn btn-default arrow-button" id="leftArrowBtn" onclick="moveCandy('left')">&larr;</button>
+        <button class="btn btn-default arrow-button" id="rightArrowBtn" onclick="moveCandy('right')">&rarr;</button>
+      </div>
+      <button class="btn btn-default arrow-button" id="downArrowBtn" onclick="moveCandy('down')">&darr;</button>
+      <div class="mt-4">
+        <button class="btn btn-default" id="crushCandiesBtn" disabled>Crush Once</button>
+      </div>
+    </div>
+
+  </div> <!-- class="row" -->
+</div> <!-- class="container" -->
+
+</body>
+
+</html>
